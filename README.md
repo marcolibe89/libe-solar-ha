@@ -26,7 +26,7 @@ Intelligent battery storage optimizer for Home Assistant. Maximizes economic ret
 ### Via HACS (recommended)
 
 1. Open HACS → **Integrations** → ⋮ menu → **Custom repositories**
-2. Add `https://github.com/YOUR_USERNAME/libe-solar-ha` — category: **Integration**
+2. Add `https://github.com/marcolibe89/libe-solar-ha` — category: **Integration**
 3. Search for **Libe Solar & Electricity Optimization** and install
 4. Restart Home Assistant
 5. Go to **Settings → Devices & Services → Add Integration** → search *Libe Solar & Electricity Optimization*
