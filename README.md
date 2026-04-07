@@ -1,8 +1,8 @@
 # 🔋 Libe Solar & Electricity Optimization for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![GitHub Release](https://img.shields.io/github/release/YOUR_USERNAME/libe-solar-ha.svg)](https://github.com/YOUR_USERNAME/libe-solar-ha/releases)
-[![Validate HACS](https://github.com/YOUR_USERNAME/libe-solar-ha/actions/workflows/validate.yml/badge.svg)](https://github.com/YOUR_USERNAME/libe-solar-ha/actions/workflows/validate.yml)
+[![GitHub Release](https://img.shields.io/github/release/marcolibe89/libe-solar-ha.svg)](https://github.com/marcolibe89/libe-solar-ha/releases)
+[![Validate HACS](https://github.com/marcolibe89/libe-solar-ha/actions/workflows/validate.yml/badge.svg)](https://github.com/marcolibe89/libe-solar-ha/actions/workflows/validate.yml)
 
 Intelligent battery storage optimizer for Home Assistant. Maximizes economic return by aligning charge/discharge behavior with Italian hourly **PUN** (Prezzo Unico Nazionale) pricing, PV production forecasts, wallbox (V2C Trydan) demand, and AC load awareness (Daikin).
 
