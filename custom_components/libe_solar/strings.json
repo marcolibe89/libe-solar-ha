@@ -1,0 +1,87 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Battery — Sensors & Control",
+        "description": "Step {step}: Select the entities for your battery system.",
+        "data": {
+          "battery_soc_sensor": "Battery State of Charge sensor",
+          "battery_capacity_kwh": "Battery capacity (kWh)",
+          "battery_min_soc_pct": "Minimum SOC % (never go below)",
+          "battery_reserve_soc_pct": "Reserve SOC % (end-of-day safety margin)",
+          "battery_charge_mode_entity": "Battery charge mode control entity",
+          "battery_discharge_mode_entity": "Battery discharge mode control entity (optional)",
+          "battery_charge_power_entity": "Battery charge power control entity (optional)"
+        }
+      },
+      "pv": {
+        "title": "PV & Grid Sensors",
+        "description": "Step {step}: Map your PV production and grid sensors.",
+        "data": {
+          "pv_power_sensor": "Current PV production (W)",
+          "pv_forecast_today_sensor": "PV forecast for today (kWh) — optional",
+          "house_consumption_sensor": "House consumption sensor (kW) — optional",
+          "grid_import_sensor": "Grid import sensor — optional",
+          "grid_export_sensor": "Grid export sensor — optional",
+          "estimated_hourly_consumption_wh": "Estimated base consumption (Wh/h) if no sensor"
+        }
+      },
+      "pun": {
+        "title": "PUN Price",
+        "description": "Step {step}: Configure PUN price thresholds.",
+        "data": {
+          "pun_current_price_sensor": "Current PUN price sensor (€/kWh) — optional",
+          "pun_high_threshold_eur": "High PUN threshold — trigger discharge (€/kWh)",
+          "pun_low_threshold_eur": "Low PUN threshold — cheap charging (€/kWh)"
+        }
+      },
+      "strategy": {
+        "title": "Strategy Parameters",
+        "description": "Step {step}: Configure peak windows and discharge thresholds.",
+        "data": {
+          "morning_peak_start": "Morning peak window start",
+          "morning_peak_end": "Morning peak window end",
+          "morning_peak_min_soc_pct": "Minimum SOC to discharge during morning peak (%)"
+        }
+      },
+      "wallbox": {
+        "title": "Wallbox (V2C Trydan)",
+        "description": "Step {step}: Optional EV wallbox integration.",
+        "data": {
+          "wallbox_enabled": "Enable wallbox integration",
+          "wallbox_status_sensor": "Wallbox status sensor",
+          "wallbox_power_sensor": "Wallbox current power (W)",
+          "wallbox_mode_entity": "Wallbox charging mode entity"
+        }
+      },
+      "ac": {
+        "title": "Air Conditioning (Daikin)",
+        "description": "Step {step}: Optional AC load awareness.",
+        "data": {
+          "ac_enabled": "Enable AC load awareness",
+          "ac_climate_entity": "Daikin climate entity",
+          "outdoor_temp_sensor": "Outdoor temperature sensor",
+          "ac_outdoor_temp_threshold": "Temperature above which AC load is expected (°C)"
+        }
+      }
+    },
+    "error": {
+      "unknown": "Unexpected error occurred."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Libe Solar & Electricity Optimization Settings",
+        "menu_options": {
+          "battery": "Battery sensors & control",
+          "pv": "PV & grid sensors",
+          "pun": "PUN price thresholds",
+          "strategy": "Strategy parameters",
+          "wallbox": "Wallbox (V2C Trydan)",
+          "ac": "Air conditioning (Daikin)"
+        }
+      }
+    }
+  }
+}

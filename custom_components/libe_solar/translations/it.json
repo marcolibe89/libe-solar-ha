@@ -1,0 +1,87 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Batteria — Sensori e Controllo",
+        "description": "Passo {step}: Seleziona le entità per il sistema batteria.",
+        "data": {
+          "battery_soc_sensor": "Sensore SOC batteria",
+          "battery_capacity_kwh": "Capacità batteria (kWh)",
+          "battery_min_soc_pct": "SOC minimo % (non scendere mai sotto)",
+          "battery_reserve_soc_pct": "SOC di riserva % (margine sicurezza fine giornata)",
+          "battery_charge_mode_entity": "Entità controllo modalità carica",
+          "battery_discharge_mode_entity": "Entità controllo modalità scarica (opzionale)",
+          "battery_charge_power_entity": "Entità controllo potenza di carica (opzionale)"
+        }
+      },
+      "pv": {
+        "title": "Sensori FV e Rete",
+        "description": "Passo {step}: Mappa i sensori di produzione FV e rete.",
+        "data": {
+          "pv_power_sensor": "Produzione FV istantanea (W)",
+          "pv_forecast_today_sensor": "Forecast FV giornaliero (kWh) — opzionale",
+          "house_consumption_sensor": "Sensore consumo casa (kW) — opzionale",
+          "grid_import_sensor": "Sensore importazione rete — opzionale",
+          "grid_export_sensor": "Sensore esportazione rete — opzionale",
+          "estimated_hourly_consumption_wh": "Consumo base stimato (Wh/h) se non c'è sensore"
+        }
+      },
+      "pun": {
+        "title": "Prezzo PUN",
+        "description": "Passo {step}: Configura le soglie del prezzo PUN.",
+        "data": {
+          "pun_current_price_sensor": "Sensore prezzo PUN corrente (€/kWh) — opzionale",
+          "pun_high_threshold_eur": "Soglia PUN alta — attiva scarica (€/kWh)",
+          "pun_low_threshold_eur": "Soglia PUN bassa — carica conveniente (€/kWh)"
+        }
+      },
+      "strategy": {
+        "title": "Parametri Strategia",
+        "description": "Passo {step}: Configura le finestre di picco e soglie.",
+        "data": {
+          "morning_peak_start": "Inizio finestra picco mattutino",
+          "morning_peak_end": "Fine finestra picco mattutino",
+          "morning_peak_min_soc_pct": "SOC minimo per scaricare durante il picco mattutino (%)"
+        }
+      },
+      "wallbox": {
+        "title": "Wallbox (V2C Trydan)",
+        "description": "Passo {step}: Integrazione wallbox EV opzionale.",
+        "data": {
+          "wallbox_enabled": "Abilita integrazione wallbox",
+          "wallbox_status_sensor": "Sensore stato wallbox",
+          "wallbox_power_sensor": "Potenza wallbox istantanea (W)",
+          "wallbox_mode_entity": "Entità modalità carica wallbox"
+        }
+      },
+      "ac": {
+        "title": "Climatizzazione (Daikin)",
+        "description": "Passo {step}: Consapevolezza carico AC opzionale.",
+        "data": {
+          "ac_enabled": "Abilita rilevamento carico AC",
+          "ac_climate_entity": "Entità climate Daikin",
+          "outdoor_temp_sensor": "Sensore temperatura esterna",
+          "ac_outdoor_temp_threshold": "Temperatura sopra cui considerare carico AC (°C)"
+        }
+      }
+    },
+    "error": {
+      "unknown": "Errore imprevisto."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Impostazioni Libe Solar & Electricity Optimization",
+        "menu_options": {
+          "battery": "Sensori e controllo batteria",
+          "pv": "Sensori FV e rete",
+          "pun": "Soglie prezzo PUN",
+          "strategy": "Parametri strategia",
+          "wallbox": "Wallbox (V2C Trydan)",
+          "ac": "Climatizzazione (Daikin)"
+        }
+      }
+    }
+  }
+}
