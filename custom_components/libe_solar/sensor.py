@@ -29,6 +29,11 @@ async def async_setup_entry(
         BatteryOptimizerHoursRemainingSensor(coordinator, entry),
         BatteryOptimizerEstimatedLoadSensor(coordinator, entry),
         BatteryOptimizerPunSensor(coordinator, entry),
+        # Calibrazione FV — sempre attivi, indipendenti dal manual override
+        PVCalibrationCoefficientSensor(coordinator, entry),
+        PVForecastCalibratedSensor(coordinator, entry),
+        # Debug — decisione algoritmica pura senza override manuale
+        BatteryOptimizationDebugSensor(coordinator, entry),
     ])
 
 
@@ -148,3 +153,89 @@ class BatteryOptimizerPunSensor(_BaseOptimizerSensor):
     def native_value(self):
         val = self.coordinator.data.get("pun_price")
         return round(val, 4) if val is not None else None
+
+
+# ─── Calibrazione FV ─────────────────────────────────────────────────────────
+
+class PVCalibrationCoefficientSensor(_BaseOptimizerSensor):
+    """Coefficiente di calibrazione rolling (reale/previsto) — sempre attivo."""
+
+    _attr_name = "Libe Solar PV Calibration Coefficient"
+    _attr_icon = "mdi:tune-variant"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def unique_id(self):
+        return f"{self._entry.entry_id}_pv_calibration_coefficient"
+
+    @property
+    def native_value(self):
+        val = self.coordinator.data.get("pv_calibration_coefficient")
+        return round(val, 4) if val is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.data or {}
+        return {
+            "giorni_nel_buffer": d.get("pv_calibration_days"),
+            "last_update": d.get("last_update"),
+        }
+
+
+class PVForecastCalibratedSensor(_BaseOptimizerSensor):
+    """Previsione FV corretta dal coefficiente rolling — drop-in del sensore grezzo."""
+
+    _attr_name = "Libe Solar PV Forecast Calibrated"
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:solar-power"
+
+    @property
+    def unique_id(self):
+        return f"{self._entry.entry_id}_pv_forecast_calibrated"
+
+    @property
+    def native_value(self):
+        val = self.coordinator.data.get("pv_forecast_calibrated_kwh")
+        return round(val, 2) if val is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.data or {}
+        return {
+            "previsione_grezza_kwh": d.get("pv_forecast_kwh"),
+            "coefficiente_applicato": d.get("pv_calibration_coefficient"),
+        }
+
+
+# ─── Debug ───────────────────────────────────────────────────────────────────
+
+class BatteryOptimizationDebugSensor(_BaseOptimizerSensor):
+    """Decisione algoritmica pura — ignora il manual override, non aziona nulla."""
+
+    _attr_name = "Libe Solar Optimization Debug"
+    _attr_icon = "mdi:robot-outline"
+
+    @property
+    def unique_id(self):
+        return f"{self._entry.entry_id}_optimization_debug"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("debug_recommended_mode")
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.data or {}
+        return {
+            "motivo": d.get("debug_strategy_reason"),
+            "override_manuale_attivo": d.get("manual_override"),
+            "decisione_effettiva": d.get("recommended_mode"),
+            "soc_pct": d.get("soc"),
+            "pun_eur_kwh": d.get("pun_price"),
+            "forecast_calibrato_kwh": d.get("pv_forecast_calibrated_kwh"),
+            "surplus_netto_w": d.get("net_surplus_w"),
+            "carico_stimato_w": d.get("estimated_load_w"),
+            "last_update": d.get("last_update"),
+        }

@@ -10,7 +10,7 @@ import homeassistant.helpers.config_validation as cv
 from .const import (
     DOMAIN,
     CONF_BATTERY_SOC, CONF_BATTERY_CAPACITY, CONF_BATTERY_MIN_SOC,
-    CONF_BATTERY_RESERVE_SOC, CONF_PV_POWER, CONF_PV_FORECAST_TODAY,
+    CONF_BATTERY_RESERVE_SOC, CONF_PV_POWER, CONF_PV_FORECAST_TODAY, CONF_PV_ENERGY_TODAY,
     CONF_GRID_IMPORT, CONF_GRID_EXPORT, CONF_HOUSE_CONSUMPTION,
     CONF_BATTERY_CHARGE_MODE, CONF_BATTERY_DISCHARGE_MODE,
     CONF_BATTERY_CHARGE_POWER, CONF_PUN_SENSOR,
@@ -65,6 +65,7 @@ STEP_BATTERY_SCHEMA = vol.Schema({
 STEP_PV_SCHEMA = vol.Schema({
     vol.Required(CONF_PV_POWER): _sensor_selector(),
     vol.Optional(CONF_PV_FORECAST_TODAY): _sensor_selector(),
+    vol.Optional(CONF_PV_ENERGY_TODAY): _sensor_selector(),
     vol.Optional(CONF_HOUSE_CONSUMPTION): _sensor_selector(),
     vol.Optional(CONF_GRID_IMPORT): _sensor_selector(),
     vol.Optional(CONF_GRID_EXPORT): _sensor_selector(),

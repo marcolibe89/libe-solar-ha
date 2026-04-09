@@ -20,6 +20,7 @@
         "data": {
           "pv_power_sensor": "Current PV production (W)",
           "pv_forecast_today_sensor": "PV forecast for today (kWh) — optional",
+          "pv_energy_today_sensor": "PV actual production today (kWh) — for calibration, optional",
           "house_consumption_sensor": "House consumption sensor (kW) — optional",
           "grid_import_sensor": "Grid import sensor — optional",
           "grid_export_sensor": "Grid export sensor — optional",

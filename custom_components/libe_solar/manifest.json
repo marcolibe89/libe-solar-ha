@@ -1,7 +1,7 @@
 {
   "domain": "libe_solar",
   "name": "Libe Solar & Electricity Optimization",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "documentation": "https://github.com/YOUR_USERNAME/libe-solar-ha",
   "issue_tracker": "https://github.com/YOUR_USERNAME/libe-solar-ha/issues",
   "dependencies": [],
