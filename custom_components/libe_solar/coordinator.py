@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -27,7 +27,8 @@ from .const import (
     DEFAULT_PUN_HIGH, DEFAULT_PUN_LOW,
     STATE_IDLE, STATE_CHARGING, STATE_DISCHARGING, STATE_HOLDING,
     CALIBRATION_STORAGE_KEY, CALIBRATION_MAX_DAYS,
-    CALIBRATION_MIN_FORECAST, CALIBRATION_MIN_ACTUAL, CALIBRATION_WEIGHT_MAX,
+    CALIBRATION_MIN_FORECAST_KWH, CALIBRATION_MIN_ACTUAL_KWH,
+    CALIBRATION_WEIGHT_MAX,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,22 +67,34 @@ class BatteryOptimizerCoordinator(DataUpdateCoordinator):
         self._manual_override: bool = False
         self._manual_mode: str | None = None
 
-        # Calibration state — persisted across HA restarts via Store
+        # ── Calibration state — persisted via Store ───────────────────────
+        # Buffer: lista di dict per ogni giorno valido (max CALIBRATION_MAX_DAYS)
+        # {date, forecast_5am_kwh, actual_kwh, ratio, weight}
         self._store = Store(hass, version=1, key=CALIBRATION_STORAGE_KEY)
-        self._calibration_buffer: list[dict] = []
-        self._calibration_saved_date: str = ""
+        self._cal_buffer: list[dict] = []
+        # Snapshot della previsione alle 5:00 del giorno corrente
+        self._forecast_snapshot: dict = {}   # {date: str, value_kwh: float}
+        # Guard: evita doppio snapshot e doppio aggiornamento buffer nello stesso giorno
+        self._snapshot_done_date: str = ""
+        self._buffer_updated_date: str = ""
 
     # ─── Setup ───────────────────────────────────────────────────────────
 
     async def async_load_calibration(self) -> None:
-        """Load calibration buffer from persistent storage. Call once at setup."""
+        """Load persisted calibration data. Must be called once at integration setup."""
         stored = await self._store.async_load()
-        if stored and isinstance(stored.get("buffer"), list):
-            self._calibration_buffer = stored["buffer"]
-            _LOGGER.debug(
-                "[Calibration] Loaded %d days from storage",
-                len(self._calibration_buffer),
-            )
+        if not stored:
+            return
+        if isinstance(stored.get("buffer"), list):
+            self._cal_buffer = stored["buffer"]
+        if isinstance(stored.get("snapshot"), dict):
+            self._forecast_snapshot = stored["snapshot"]
+            self._snapshot_done_date = stored["snapshot"].get("date", "")
+        _LOGGER.debug(
+            "[Calibration] Loaded: %d days in buffer, snapshot=%s",
+            len(self._cal_buffer),
+            self._forecast_snapshot,
+        )
 
     # ─── Public properties ────────────────────────────────────────────────
 
@@ -96,80 +109,122 @@ class BatteryOptimizerCoordinator(DataUpdateCoordinator):
 
     # ─── Calibration helpers ──────────────────────────────────────────────
 
-    def _calibration_coefficient(self) -> float:
-        """Weighted average of actual/forecast ratios over the rolling buffer."""
+    def _compute_coefficient(self) -> float:
+        """Weighted average of (actual / forecast) over valid buffer days."""
         num = 0.0
         den = 0.0
-        for entry in self._calibration_buffer:
-            fc = entry.get("forecast_kwh", 0)
-            ac = entry.get("actual_kwh", 0)
-            w  = entry.get("weight", 1.0)
-            if fc > CALIBRATION_MIN_FORECAST and ac > 0:
+        for e in self._cal_buffer:
+            fc = e.get("forecast_5am_kwh", 0)
+            ac = e.get("actual_kwh", 0)
+            w  = e.get("weight", 1.0)
+            if fc >= CALIBRATION_MIN_FORECAST_KWH and ac > 0:
                 num += (ac / fc) * w
                 den += w
         return round(num / den, 4) if den > 0 else 1.0
 
-    def _update_calibration_buffer(
-        self, forecast_kwh: float, actual_kwh: float, date_str: str
-    ) -> None:
-        """Add today to the buffer, re-weight all entries, trim to max days."""
-        if forecast_kwh < CALIBRATION_MIN_FORECAST or actual_kwh < CALIBRATION_MIN_ACTUAL:
-            _LOGGER.debug(
-                "[Calibration] Skipping %s — forecast=%.2f kWh actual=%.2f kWh (below threshold)",
-                date_str, forecast_kwh, actual_kwh,
+    def _reweight_buffer(self) -> None:
+        """Assign linear weights: oldest day → 1.0, newest → CALIBRATION_WEIGHT_MAX."""
+        n = len(self._cal_buffer)
+        for i, entry in enumerate(self._cal_buffer):
+            if n > 1:
+                entry["weight"] = round(
+                    1.0 + (CALIBRATION_WEIGHT_MAX - 1.0) * i / (n - 1), 4
+                )
+            else:
+                entry["weight"] = CALIBRATION_WEIGHT_MAX
+
+    def _add_to_buffer(self, date_str: str, forecast_5am_kwh: float, actual_kwh: float) -> None:
+        """Validate, add entry, trim buffer, reweight."""
+        if forecast_5am_kwh < CALIBRATION_MIN_FORECAST_KWH:
+            _LOGGER.info(
+                "[Calibration] %s skipped — forecast %.2f kWh below %.1f kWh threshold (cloudy day)",
+                date_str, forecast_5am_kwh, CALIBRATION_MIN_FORECAST_KWH,
+            )
+            return
+        if actual_kwh < CALIBRATION_MIN_ACTUAL_KWH:
+            _LOGGER.info(
+                "[Calibration] %s skipped — actual %.2f kWh below %.1f kWh threshold",
+                date_str, actual_kwh, CALIBRATION_MIN_ACTUAL_KWH,
             )
             return
 
-        # Remove existing entry for same date if any
-        self._calibration_buffer = [
-            e for e in self._calibration_buffer if e.get("date") != date_str
-        ]
+        ratio = round(actual_kwh / forecast_5am_kwh, 4)
 
-        # Append new entry
-        self._calibration_buffer.append({
+        # Remove any existing entry for the same date
+        self._cal_buffer = [e for e in self._cal_buffer if e.get("date") != date_str]
+        self._cal_buffer.append({
             "date": date_str,
-            "forecast_kwh": round(forecast_kwh, 3),
-            "actual_kwh": round(actual_kwh, 3),
-            "weight": 1.0,
+            "forecast_5am_kwh": round(forecast_5am_kwh, 2),
+            "actual_kwh": round(actual_kwh, 2),
+            "ratio": ratio,
+            "weight": 1.0,  # will be recalculated
         })
 
-        # Sort by date ascending, keep last N days
-        self._calibration_buffer.sort(key=lambda e: e["date"])
-        self._calibration_buffer = self._calibration_buffer[-CALIBRATION_MAX_DAYS:]
+        # Sort ascending by date, keep last N
+        self._cal_buffer.sort(key=lambda e: e["date"])
+        self._cal_buffer = self._cal_buffer[-CALIBRATION_MAX_DAYS:]
 
-        # Re-assign linear weights: oldest → 1.0, newest → CALIBRATION_WEIGHT_MAX
-        n = len(self._calibration_buffer)
-        for i, entry in enumerate(self._calibration_buffer):
-            entry["weight"] = round(
-                1.0 + (CALIBRATION_WEIGHT_MAX - 1.0) * i / max(n - 1, 1), 4
-            )
+        self._reweight_buffer()
 
         _LOGGER.info(
-            "[Calibration] Buffer updated: %d days, coefficient=%.4f",
-            n, self._calibration_coefficient(),
+            "[Calibration] Buffer updated — %s: forecast=%.2f actual=%.2f ratio=%.4f | "
+            "%d days, coeff=%.4f",
+            date_str, forecast_5am_kwh, actual_kwh, ratio,
+            len(self._cal_buffer), self._compute_coefficient(),
         )
+
+    def _calibration_stats(self) -> dict:
+        """Compute derived stats exposed to sensors."""
+        valid = [
+            e for e in self._cal_buffer
+            if e.get("forecast_5am_kwh", 0) >= CALIBRATION_MIN_FORECAST_KWH
+            and e.get("actual_kwh", 0) > 0
+        ]
+        n = len(valid)
+
+        # Last day in buffer
+        last = valid[-1] if valid else None
+
+        # 15-day averages
+        avg_forecast = round(sum(e["forecast_5am_kwh"] for e in valid) / n, 2) if n else None
+        avg_actual   = round(sum(e["actual_kwh"]       for e in valid) / n, 2) if n else None
+        avg_ratio    = round(sum(e["ratio"]             for e in valid) / n, 4) if n else None
+
+        return {
+            "days_in_buffer": n,
+            "last_day_date":          last["date"]              if last else None,
+            "last_day_forecast_kwh":  last["forecast_5am_kwh"]  if last else None,
+            "last_day_actual_kwh":    last["actual_kwh"]         if last else None,
+            "last_day_ratio":         last["ratio"]              if last else None,
+            "avg_15d_forecast_kwh":   avg_forecast,
+            "avg_15d_actual_kwh":     avg_actual,
+            "avg_15d_ratio":          avg_ratio,
+            "buffer": valid,  # lista completa per debug / attributi
+        }
 
     # ─── Data fetch ───────────────────────────────────────────────────────
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Called every UPDATE_INTERVAL minutes by HA scheduler."""
         try:
-            result = await self.hass.async_add_executor_job(self._compute)
-
-            # Persist calibration buffer if flagged by _compute
-            if result.pop("_save_calibration", False):
-                await self._store.async_save({"buffer": self._calibration_buffer})
-                _LOGGER.debug("[Calibration] Buffer persisted to storage.")
-
+            result, save_data = await self.hass.async_add_executor_job(self._compute)
+            if save_data:
+                await self._store.async_save({
+                    "buffer": self._cal_buffer,
+                    "snapshot": self._forecast_snapshot,
+                })
+                _LOGGER.debug("[Calibration] State persisted to storage.")
             return result
         except Exception as err:
             raise UpdateFailed(f"Battery optimizer error: {err}") from err
 
-    def _compute(self) -> dict[str, Any]:
+    def _compute(self) -> tuple[dict[str, Any], bool]:
+        """Returns (data_dict, should_persist)."""
         cfg = self._config
         now = dt_util.now()
         now_minutes = now.hour * 60 + now.minute
         today_str = now.strftime("%Y-%m-%d")
+        should_persist = False
 
         # ── Read sensors ──────────────────────────────────────────────────
         soc         = _float_state(self.hass, cfg.get(CONF_BATTERY_SOC))
@@ -207,29 +262,50 @@ class BatteryOptimizerCoordinator(DataUpdateCoordinator):
         # ── Net PV surplus ────────────────────────────────────────────────
         net_surplus_w = pv_power - estimated_load_w - wallbox_power
 
-        # ── Calibration coefficient & calibrated forecast ─────────────────
-        coeff = self._calibration_coefficient()
-        pv_forecast_calibrated = (
-            round(pv_forecast * coeff, 2) if pv_forecast is not None else None
-        )
-        calibration_days = sum(
-            1 for e in self._calibration_buffer
-            if e.get("forecast_kwh", 0) > CALIBRATION_MIN_FORECAST
-        )
+        # ── Calibration: snapshot forecast alle 05:00 ─────────────────────
+        # Il sensore forecast cambia durante il giorno (le previsioni si aggiornano).
+        # Usiamo il valore delle 05:00 come riferimento stabile per il confronto
+        # con la produzione reale a fine giornata.
+        if (
+            now.hour == 5
+            and now.minute < UPDATE_INTERVAL
+            and self._snapshot_done_date != today_str
+            and pv_forecast is not None
+        ):
+            self._forecast_snapshot = {
+                "date": today_str,
+                "value_kwh": round(pv_forecast, 2),
+            }
+            self._snapshot_done_date = today_str
+            should_persist = True
+            _LOGGER.info(
+                "[Calibration] Forecast snapshot at 05:00 → %.2f kWh", pv_forecast
+            )
 
-        # ── End-of-day calibration buffer update (once per day, 23:25–23:30) ─
-        save_calibration = False
+        # ── Calibration: aggiorna buffer a fine giornata (23:25–23:30) ────
+        # Confronta lo snapshot delle 05:00 con la produzione reale del giorno.
+        snapshot_today = self._forecast_snapshot.get("date") == today_str
         if (
             now.hour == 23
             and 25 <= now.minute < 30
-            and self._calibration_saved_date != today_str
-            and pv_forecast is not None
+            and self._buffer_updated_date != today_str
+            and snapshot_today
             and pv_actual is not None
         ):
-            self._update_calibration_buffer(pv_forecast, pv_actual, today_str)
-            self._calibration_saved_date = today_str
-            coeff = self._calibration_coefficient()  # refresh after update
-            save_calibration = True
+            self._add_to_buffer(
+                date_str=today_str,
+                forecast_5am_kwh=self._forecast_snapshot["value_kwh"],
+                actual_kwh=pv_actual,
+            )
+            self._buffer_updated_date = today_str
+            should_persist = True
+
+        # ── Calibration: coefficiente e previsione corretta ───────────────
+        coeff = self._compute_coefficient()
+        pv_forecast_calibrated = (
+            round(pv_forecast * coeff, 2) if pv_forecast is not None else None
+        )
+        cal_stats = self._calibration_stats()
 
         # ── Strategy parameters ───────────────────────────────────────────
         pun_high     = cfg.get(CONF_PUN_HIGH_THRESHOLD, DEFAULT_PUN_HIGH)
@@ -240,30 +316,43 @@ class BatteryOptimizerCoordinator(DataUpdateCoordinator):
         peak_start   = _time_to_minutes(cfg.get(CONF_MORNING_PEAK_START, "07:00"))
         peak_end     = _time_to_minutes(cfg.get(CONF_MORNING_PEAK_END, "08:00"))
         peak_min_soc = cfg.get(CONF_MORNING_PEAK_MIN_SOC, 40)
-
         in_morning_peak = peak_start <= now_minutes < peak_end
 
-        # ── Pure algorithmic decision (always computed, ignores manual override) ─
-        algo_mode, algo_reason = self._algorithmic_decision(
-            soc=soc,
-            net_surplus_w=net_surplus_w,
-            pun_price=pun_price,
-            in_morning_peak=in_morning_peak,
-            now_minutes=now_minutes,
-            pun_high=pun_high,
-            pun_low=pun_low,
-            min_soc=min_soc,
-            reserve=reserve,
-            peak_min_soc=peak_min_soc,
-        )
-
-        # ── Apply manual override on top ──────────────────────────────────
+        # ── Decide strategy ───────────────────────────────────────────────
         if self._manual_override:
             recommended = self._manual_mode or STATE_HOLDING
-            reason = f"Override manuale attivo (algoritmo: {algo_mode})"
+            reason = "Manual override"
+        elif soc is None:
+            recommended = STATE_HOLDING
+            reason = "SOC unavailable — holding"
+        elif soc <= min_soc:
+            recommended = STATE_CHARGING
+            reason = f"SOC {soc:.0f}% at minimum — force charge"
+        elif in_morning_peak and soc >= peak_min_soc:
+            pun_ok = pun_price is None or pun_price >= pun_high
+            if pun_ok:
+                recommended = STATE_DISCHARGING
+                reason = f"Morning peak window, SOC {soc:.0f}%, PUN {'N/A' if pun_price is None else f'{pun_price:.3f}€'}"
+            else:
+                recommended = STATE_HOLDING
+                reason = f"Morning peak but PUN too low ({pun_price:.3f}€ < {pun_high}€)"
+        elif net_surplus_w > 200 and soc < (100 - reserve):
+            is_midday = 9 * 60 <= now_minutes <= 17 * 60
+            if is_midday or (pun_price is not None and pun_price <= pun_low):
+                recommended = STATE_CHARGING
+                reason = f"PV surplus {net_surplus_w:.0f}W, charging from solar"
+            else:
+                recommended = STATE_HOLDING
+                reason = f"PV surplus {net_surplus_w:.0f}W but waiting for better PUN window"
+        elif pun_price is not None and pun_price >= pun_high and soc > reserve:
+            recommended = STATE_DISCHARGING
+            reason = f"High PUN {pun_price:.3f}€, discharging (SOC {soc:.0f}%)"
+        elif pun_price is not None and pun_price <= pun_low and soc < 90:
+            recommended = STATE_CHARGING
+            reason = f"Low PUN {pun_price:.3f}€, cheap charging"
         else:
-            recommended = algo_mode
-            reason = algo_reason
+            recommended = STATE_IDLE
+            reason = "No profitable action identified"
 
         # ── Estimated hours until depletion ───────────────────────────────
         hours_remaining: float | None = None
@@ -289,55 +378,9 @@ class BatteryOptimizerCoordinator(DataUpdateCoordinator):
             "manual_override": self._manual_override,
             "hours_remaining": hours_remaining,
             "last_update": now.isoformat(),
-            # Calibration — sempre disponibili indipendentemente dal manual override
+            # Calibration
             "pv_calibration_coefficient": coeff,
-            "pv_calibration_days": calibration_days,
-            "pv_forecast_calibrated_kwh": pv_forecast_calibrated,
-            # Debug — decisione algoritmica pura, senza override manuale
-            "debug_recommended_mode": algo_mode,
-            "debug_strategy_reason": algo_reason,
-            # Flag interno — consumato da _async_update_data, non esposto
-            "_save_calibration": save_calibration,
-        }
-
-    def _algorithmic_decision(
-        self,
-        soc: float | None,
-        net_surplus_w: float,
-        pun_price: float | None,
-        in_morning_peak: bool,
-        now_minutes: int,
-        pun_high: float,
-        pun_low: float,
-        min_soc: float,
-        reserve: float,
-        peak_min_soc: float,
-    ) -> tuple[str, str]:
-        """Pure algorithmic decision — no manual override, no side effects."""
-
-        if soc is None:
-            return STATE_HOLDING, "SOC non disponibile — in attesa"
-
-        if soc <= min_soc:
-            return STATE_CHARGING, f"SOC {soc:.0f}% al minimo — carica forzata"
-
-        if in_morning_peak and soc >= peak_min_soc:
-            pun_ok = pun_price is None or pun_price >= pun_high
-            if pun_ok:
-                pun_str = "N/D" if pun_price is None else f"{pun_price:.3f} €/kWh"
-                return STATE_DISCHARGING, f"Picco mattutino, SOC {soc:.0f}%, PUN {pun_str}"
-            return STATE_HOLDING, f"Picco mattutino ma PUN basso ({pun_price:.3f} < {pun_high} €/kWh)"
-
-        if net_surplus_w > 200 and soc < (100 - reserve):
-            is_midday = 9 * 60 <= now_minutes <= 17 * 60
-            if is_midday or (pun_price is not None and pun_price <= pun_low):
-                return STATE_CHARGING, f"Surplus FV {net_surplus_w:.0f} W — carica da solare"
-            return STATE_HOLDING, f"Surplus FV {net_surplus_w:.0f} W — attesa finestra PUN migliore"
-
-        if pun_price is not None and pun_price >= pun_high and soc > reserve:
-            return STATE_DISCHARGING, f"PUN alto {pun_price:.3f} €/kWh — scarica (SOC {soc:.0f}%)"
-
-        if pun_price is not None and pun_price <= pun_low and soc < 90:
-            return STATE_CHARGING, f"PUN basso {pun_price:.3f} €/kWh — carica conveniente"
-
-        return STATE_IDLE, "Nessuna azione economicamente vantaggiosa"
+            "pv_forecast_snapshot_kwh": self._forecast_snapshot.get("value_kwh"),
+            "pv_forecast_snapshot_date": self._forecast_snapshot.get("date"),
+            **{f"cal_{k}": v for k, v in cal_stats.items()},
+        }, should_persist

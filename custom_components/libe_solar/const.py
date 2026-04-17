@@ -64,9 +64,9 @@ STATE_HOLDING    = "holding"
 UPDATE_INTERVAL = 5
 
 # PV calibration
-CONF_PV_ENERGY_TODAY       = "pv_energy_today_sensor"
-CALIBRATION_STORAGE_KEY    = f"{DOMAIN}_calibration_buffer"
-CALIBRATION_MAX_DAYS       = 15
-CALIBRATION_MIN_FORECAST   = 2.0   # kWh — giorni sotto soglia esclusi dal buffer
-CALIBRATION_MIN_ACTUAL     = 0.5   # kWh — produzione reale minima accettabile
-CALIBRATION_WEIGHT_MAX     = 2.0   # peso giorno più recente vs peso giorno più vecchio (1.0)
+CONF_PV_ENERGY_TODAY         = "pv_energy_today_sensor"
+CALIBRATION_STORAGE_KEY      = f"{DOMAIN}_calibration"
+CALIBRATION_MAX_DAYS         = 15
+CALIBRATION_MIN_FORECAST_KWH = 2.0   # giorni con stima < 2 kWh ignorati (cielo coperto)
+CALIBRATION_MIN_ACTUAL_KWH   = 0.5   # produzione reale minima accettabile
+CALIBRATION_WEIGHT_MAX       = 2.0   # peso del giorno più recente (il più vecchio = 1.0)
